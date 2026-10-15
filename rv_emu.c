@@ -12,6 +12,123 @@ static void unsupported(char *s, uint32_t n) {
     exit(-1);
 }
 
+void emu_r_type(rv_state *rsp, uint32_t iw) {
+    uint32_t rd = (iw >> 7) & 0b11111;
+    uint32_t rs1 = (iw >> 15) & 0b11111;
+    uint32_t rs2 = (iw >> 20) & 0b11111;
+    uint32_t funct3 = (iw >> 12) & 0b111;
+    uint32_t funct7 = (iw >> 25) & 0b1111111;
+
+    if (funct3 == 0b000 && funct7 == 0b0000000) {
+        rsp->regs[rd] = rsp->regs[rs1] + rsp->regs[rs2];
+    } else if(funct3 == 0b000 && funct7 == 0b0000001){
+    	rsp->regs[rd] = rsp->regs[rs1] * rsp->regs[rs2];
+    } else if(funct3 == 0b000 && funct7 == 0b0100000){
+    	// sub
+    	rsp->regs[rd] = rsp->regs[rs1] - rsp->regs[rs2];
+    } else if(funct3 == 0b001 && funct7 == 0b0000000){
+    	// shift left
+    	rsp->regs[rd] = rsp->regs[rs1] << rsp->regs[rs2];
+    } else if(funct3 == 0b101 && funct7 == 0b0000000){
+    	// shift right
+    	rsp->regs[rd] = rsp->regs[rs1] >> rsp->regs[rs2];
+    } else if (funct3 == 0b111 && funct7 == 0b0000000){
+    	// and
+     	rsp->regs[rd] = rsp->regs[rs1] & rsp->regs[rs2];
+    } else {
+        unsupported("R-type funct3", funct3);
+    }
+    rsp->pc += 4; // Next instruction
+}
+
+void emu_jalr(rv_state *rsp, uint32_t iw) {
+    uint32_t rs1 = (iw >> 15) & 0b1111;  // Will be ra (aka x1)
+    uint64_t val = rsp->regs[rs1];  // Value of regs[1]
+
+    rsp->pc = val;  // PC = return address
+}
+void emu_i_type(rv_state *rsp, uint32_t iw){
+	uint32_t rd = (iw >> 7) & 0b11111;
+	uint32_t rs1 = (iw >> 15) & 0b11111;
+	uint32_t funct3 = (iw >> 12) & 0b111;
+	uint32_t shamt = (iw >> 20) & 0b111111;
+
+	uint64_t imm_u = (iw >> 20) & 0b111111111111;
+	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
+
+	if(funct3 == 0b000){
+		// addi
+		rsp->regs[rd] = rsp->regs[rs1] + imm;
+	} else if(funct3 == 0b101){
+		// srli
+		rsp->regs[rd] = rsp->regs[rs1] >> shamt;
+	} else {
+		unsupported("I-type funct3", funct3);
+	}
+	rsp->pc += 4;
+}
+void emu_b_type(rv_state *rsp, uint32_t iw){
+	uint32_t rs1 = (iw >> 15) & 0b11111;
+	uint32_t rs2 = (iw >> 20) & 0b11111;
+	uint32_t funct3 = (iw >> 12) & 0b111;
+
+	// Extract each piece of the immediate
+	uint64_t imm12 = (iw >> 31) & 0b1;
+	uint64_t imm10_5 = (iw >> 25) & 0b111111;
+	uint64_t imm4_1 = (iw >> 8) & 0b1111;
+	uint64_t imm11 = (iw >> 7) & 0b1;
+
+	// OR the pieces back into their real positions
+	uint64_t imm_u = (imm12 << 12) | (imm11 << 11) | (imm10_5 << 5) | (imm4_1 << 1);
+
+	// Sign extend: shift up to the top of the register, then back down
+	int64_t imm = ((int64_t) (imm_u << 51)) >> 51;
+
+	// Sign compare so cast the register values
+	int64_t v1 = (int64_t) rsp->regs[rs1];
+	int64_t v2 = (int64_t) rsp->regs[rs2];
+
+	if(funct3 == 0b100){
+		// blt
+		if(v1 < v2){
+			rsp->pc += imm;
+		} else {
+			rsp->pc += 4;
+		}
+	} else if(funct3 == 0b001){
+		// bne 
+		if(v1 != v2){
+			rsp->pc += imm;
+		} else {
+			rsp->pc += 4;
+		}
+	} else{
+		unsupported("B-type funct3", funct3);
+	}
+}
+void emu_jal(rv_state *rsp, uint32_t iw){
+	uint32_t rd = (iw >> 7) & 0b11111;
+
+	// Extract each piece of the immediate
+	uint64_t imm20 = (iw >> 31) & 0b1;
+	uint64_t imm10_1 = (iw >> 21) & 0b1111111111;
+	uint64_t imm11 = (iw >> 20) & 0b1;
+	uint64_t imm19_12 = (iw >> 12) & 0b11111111;
+
+	// OR pieces back into real positions
+	uint64_t imm_u = (imm20 << 20) | (imm19_12 << 12) | (imm11 << 11) | (imm10_1 << 1);
+
+	// Sign extend a 21 bit immediate
+	int64_t imm = ((int64_t) (imm_u << 43)) >> 43;
+
+	// Link: save return address, unless rd is x0 (plain j)
+	if(rd != 0){
+		rsp->regs[rd] = rsp->pc + 4;
+	}
+
+	rsp->pc += imm;
+	
+}
 static void rv_one(rv_state *state) {
     uint32_t iw  = *((uint32_t*) state->pc);
     //iw = cache_lookup(&state->i_cache, (uint64_t) state->pc);
@@ -24,6 +141,21 @@ static void rv_one(rv_state *state) {
 #endif
 
     switch (opcode) {
+    	case FMT_R:
+    		emu_r_type(state, iw);
+    		break;
+    	case FMT_I_JALR:
+    		emu_jalr(state, iw);
+    		break;
+    	case FMT_I_ARITH:
+    		emu_i_type(state, iw);
+    		break;
+    	case FMT_SB:
+    		emu_b_type(state, iw);
+    		break;
+    	case FMT_UJ:
+    		emu_jal(state, iw);
+    		break;
         default:
             unsupported("Unknown opcode: ", opcode);
     }
