@@ -80,7 +80,8 @@ uint32_t cache_lookup_dm(struct cache_st *csp, uint64_t addr) {
     struct cache_slot_st *slot;
     uint32_t data = 0;
 
-    b_index = 0; // Need to change for block size > 1
+    b_index = (addr >> 2) & csp->block_mask;
+    // Split the address (the PC) into pieces
     index = (addr >> (csp->block_bits + 2)) & csp->index_mask;
     tag = addr >> (csp->index_bits + csp->block_bits + 2);
 
@@ -111,8 +112,14 @@ uint32_t cache_lookup_dm(struct cache_st *csp, uint64_t addr) {
         slot->valid = 1;
         slot->tag = tag;
 
-        // Need to change for block size > 1
-        data = slot->block[b_index];
+		// block base: go back b_index words (4 bytes each) to word 0 of the block
+		b_base = addr - (b_index * 4);
+
+		// fill the whole block from memory, one word at a time
+		for(int i = 0; i < csp->block_size; i++){
+			slot->block[i] = *((uint32_t *) (b_base + i * 4));
+		}
+		data = slot->block[b_index];
     }
     
     return data;
