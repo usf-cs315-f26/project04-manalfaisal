@@ -80,6 +80,7 @@ uint32_t cache_lookup_dm(struct cache_st *csp, uint64_t addr) {
     struct cache_slot_st *slot;
     uint32_t data = 0;
 
+	// block holds 4 instructions in a row, which of the 4 is this addr
     b_index = (addr >> 2) & csp->block_mask;
     // Split the address (the PC) into pieces
     index = (addr >> (csp->block_bits + 2)) & csp->index_mask;
@@ -141,8 +142,8 @@ uint32_t cache_lookup_sa(struct cache_st *csp, uint64_t addr) {
     csp->refs += 1;
 
     uint64_t tag = addr >> (csp->index_bits + csp->block_bits + 2);
-
-    uint64_t b_index = 1; // Need to change for block size > 1
+	// which word in the block: drop byte offset, keep block_bits bits
+    uint64_t b_index = (addr >> 2) & csp->block_mask; 
 
     uint64_t b_base;
     int set_index = (addr >> (csp->block_bits + 2)) & csp->index_mask;
@@ -153,7 +154,8 @@ uint32_t cache_lookup_sa(struct cache_st *csp, uint64_t addr) {
     struct cache_slot_st *slot_invalid = NULL;
 
     // Check each slot in the set
-    for (int i = 0; i < 4; i += 1) {
+    // csp->ways so it uses cache's actual num of ways 
+    for (int i = 0; i < csp->ways; i += 1) {
         slot = &csp->slots[set_base + i];
         if (slot->valid) {
             if (tag == slot->tag) {
@@ -179,8 +181,13 @@ uint32_t cache_lookup_sa(struct cache_st *csp, uint64_t addr) {
             // Miss due to tag collision is a "hot" miss
             csp->misses_cold += 1;
         } else {
-            // Always pick first slot in set - CHANGE TO LRU
+            // LRU: evict slot in this set with smallest timestamp
             slot = &(csp->slots[set_base]);
+            for(int i = 1; i < csp->ways; i++){
+            	if(csp->slots[set_base + i].timestamp < slot->timestamp){
+            		slot = &csp->slots[set_base + i];
+            	}
+            }
 
             verbose("  cache tag (%X) miss for set %d tag %X addr %X (evict address %X)\n",
                     slot->tag, set_index, tag, addr, 
@@ -193,8 +200,13 @@ uint32_t cache_lookup_sa(struct cache_st *csp, uint64_t addr) {
     }
 
     if (!hit) {
-        // Need to change for block size > 1        
-        slot->block[b_index] = *((uint32_t *) addr);
+        // block base: go back b_index words to word 0 of the block
+        b_base = addr - (b_index * 4);
+
+        // fill whole block from memory, one word at a time
+        for(int i = 0; i < csp->block_size; i++){
+        	slot->block[i] = *((uint32_t *) (b_base + i * 4));
+        }
         slot->tag = tag;
         slot->valid = true;
     }
