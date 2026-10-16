@@ -19,6 +19,8 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
     uint32_t funct3 = (iw >> 12) & 0b111;
     uint32_t funct7 = (iw >> 25) & 0b1111111;
 
+	rsp->analysis.ir_count += 1;
+	
     if (funct3 == 0b000 && funct7 == 0b0000000) {
     	// add
         rsp->regs[rd] = rsp->regs[rs1] + rsp->regs[rs2];
@@ -52,7 +54,7 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
 void emu_jalr(rv_state *rsp, uint32_t iw) {
     uint32_t rs1 = (iw >> 15) & 0b11111;  // mask needs five 1s bc 32 registers -> rs1 is 5 bits
     uint64_t val = rsp->regs[rs1];  // Value of regs[1]
-
+	rsp->analysis.j_count += 1;
     rsp->pc = val;  // PC = return address
 }
 void emu_i_type(rv_state *rsp, uint32_t iw){
@@ -64,6 +66,8 @@ void emu_i_type(rv_state *rsp, uint32_t iw){
 	uint64_t imm_u = (iw >> 20) & 0b111111111111;
 	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
 
+	rsp->analysis.ir_count += 1;
+	
 	if(funct3 == 0b000){
 		// addi
 		rsp->regs[rd] = rsp->regs[rs1] + imm;
@@ -102,29 +106,37 @@ void emu_b_type(rv_state *rsp, uint32_t iw){
 	if(funct3 == 0b100){
 		// blt
 		if(v1 < v2){
+			rsp->analysis.b_taken += 1;
 			rsp->pc += imm;
 		} else {
+			rsp->analysis.b_not_taken += 1;
 			rsp->pc += 4;
 		}
 	} else if(funct3 == 0b001){
 		// bne 
 		if(v1 != v2){
+			rsp->analysis.b_taken += 1;
 			rsp->pc += imm;
 		} else {
+			rsp->analysis.b_not_taken += 1;
 			rsp->pc += 4;
 		}
 	} else if(funct3 == 0b000){
 		// beq
 		if(v1 == v2){
+			rsp->analysis.b_taken += 1;
 			rsp->pc += imm;
 		} else {
+			rsp->analysis.b_not_taken += 1;
 			rsp->pc += 4;
 		}
 	} else if(funct3 == 0b101){
 		// bge
 		if(v1 >= v2){
+			rsp->analysis.b_taken += 1;
 			rsp->pc += imm;
 		} else {
+			rsp->analysis.b_not_taken += 1;
 			rsp->pc += 4;
 		}
 	} else{
@@ -146,6 +158,8 @@ void emu_jal(rv_state *rsp, uint32_t iw){
 	// Sign extend a 21 bit immediate
 	int64_t imm = ((int64_t) (imm_u << 43)) >> 43;
 
+	rsp->analysis.j_count += 1;
+	
 	// Link: save return address, unless rd is x0 (plain j)
 	if(rd != 0){
 		rsp->regs[rd] = rsp->pc + 4;
@@ -166,6 +180,9 @@ void emu_load(rv_state *rsp, uint32_t iw){
 	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
 	// target = base pointer + offset
 	uint64_t target = rsp->regs[rs1] + imm;
+
+	rsp->analysis.ld_count += 1;
+	
 	// read the right size from memory, based on funct3 
 	if(funct3 == 0b000){
 		// lb
@@ -193,6 +210,9 @@ void emu_store(rv_state *rsp, uint32_t iw){
 	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
 	// target = base pointer + offset 
 	uint64_t target = rsp->regs[rs1] + imm;
+
+	rsp->analysis.st_count += 1;
+	
 	// write the right size to memory, based on funct3
 	if(funct3 == 0b000){
 		// sb
@@ -219,6 +239,9 @@ static void rv_one(rv_state *state) {
     printf("iw: %x\n", iw);
 #endif
 
+	// count every instruction executed
+	state->analysis.i_count += 1;
+	
     switch (opcode) {
     	case FMT_R:
     		emu_r_type(state, iw);
