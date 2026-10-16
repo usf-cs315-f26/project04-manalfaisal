@@ -20,8 +20,10 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
     uint32_t funct7 = (iw >> 25) & 0b1111111;
 
     if (funct3 == 0b000 && funct7 == 0b0000000) {
+    	// add
         rsp->regs[rd] = rsp->regs[rs1] + rsp->regs[rs2];
     } else if(funct3 == 0b000 && funct7 == 0b0000001){
+    	// mul
     	rsp->regs[rd] = rsp->regs[rs1] * rsp->regs[rs2];
     } else if(funct3 == 0b000 && funct7 == 0b0100000){
     	// sub
@@ -35,6 +37,12 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
     } else if (funct3 == 0b111 && funct7 == 0b0000000){
     	// and
      	rsp->regs[rd] = rsp->regs[rs1] & rsp->regs[rs2];
+    } else if(funct3 == 0b100 && funct7 == 0b0000001){
+    	// div 
+    	rsp->regs[rd] = (int64_t) rsp->regs[rs1] / (int64_t) rsp->regs[rs2];
+    } else if (funct3 == 0b110 && funct7 == 0b0000001){
+    	// rem
+    	rsp->regs[rd] = (int64_t) rsp->regs[rs1] % (int64_t) rsp->regs[rs2];
     } else {
         unsupported("R-type funct3", funct3);
     }
@@ -42,7 +50,7 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
 }
 
 void emu_jalr(rv_state *rsp, uint32_t iw) {
-    uint32_t rs1 = (iw >> 15) & 0b1111;  // Will be ra (aka x1)
+    uint32_t rs1 = (iw >> 15) & 0b11111;  // mask needs five 1s bc 32 registers -> rs1 is 5 bits
     uint64_t val = rsp->regs[rs1];  // Value of regs[1]
 
     rsp->pc = val;  // PC = return address
@@ -62,6 +70,9 @@ void emu_i_type(rv_state *rsp, uint32_t iw){
 	} else if(funct3 == 0b101){
 		// srli
 		rsp->regs[rd] = rsp->regs[rs1] >> shamt;
+	} else if(funct3 == 0b001){
+		// slli
+		rsp->regs[rd] = rsp->regs[rs1] << shamt;
 	} else {
 		unsupported("I-type funct3", funct3);
 	}
@@ -102,6 +113,20 @@ void emu_b_type(rv_state *rsp, uint32_t iw){
 		} else {
 			rsp->pc += 4;
 		}
+	} else if(funct3 == 0b000){
+		// beq
+		if(v1 == v2){
+			rsp->pc += imm;
+		} else {
+			rsp->pc += 4;
+		}
+	} else if(funct3 == 0b101){
+		// bge
+		if(v1 >= v2){
+			rsp->pc += imm;
+		} else {
+			rsp->pc += 4;
+		}
 	} else{
 		unsupported("B-type funct3", funct3);
 	}
@@ -129,6 +154,60 @@ void emu_jal(rv_state *rsp, uint32_t iw){
 	rsp->pc += imm;
 	
 }
+void emu_load(rv_state *rsp, uint32_t iw){
+	// decode: rd, rs1, funct3
+	uint32_t rd = (iw >> 7) & 0b11111;
+	uint32_t rs1 = (iw >> 15) & 0b11111;
+	uint32_t funct3 = (iw >> 12) & 0b111;
+	// decode the 12-bit immediate and sign extend it
+	// load offset is a 12 bit I-type immediate 
+	// I mask 12 bits and sign-extend with 52 
+	uint64_t imm_u = (iw >> 20) & 0b111111111111;
+	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
+	// target = base pointer + offset
+	uint64_t target = rsp->regs[rs1] + imm;
+	// read the right size from memory, based on funct3 
+	if(funct3 == 0b000){
+		// lb
+		rsp->regs[rd] = *(uint8_t *) target;
+	} else if(funct3 == 0b010){
+		// lw
+		rsp->regs[rd] = *(uint32_t *) target;
+	} else if(funct3 == 0b011){
+		// ld
+		rsp->regs[rd] = *(uint64_t *) target;
+	} else {
+		unsupported("Load funct3", funct3);
+	}
+	rsp->pc += 4; 
+}
+void emu_store(rv_state *rsp, uint32_t iw){
+	// decode: rs1, rs2, funct3
+	uint32_t rs1 = (iw >> 15) & 0b11111;
+	uint32_t rs2 = (iw >> 20) & 0b11111;
+	uint32_t funct3 = (iw >> 12) & 0b111;
+	// decode the two immediate pieces, put them together, sign extend
+	uint64_t imm11_5 = (iw >> 25) & 0b1111111;
+	uint64_t imm4_0 = (iw >> 7) & 0b11111;
+	uint64_t imm_u = (imm11_5 << 5) | imm4_0;
+	int64_t imm = ((int64_t) (imm_u << 52)) >> 52;
+	// target = base pointer + offset 
+	uint64_t target = rsp->regs[rs1] + imm;
+	// write the right size to memory, based on funct3
+	if(funct3 == 0b000){
+		// sb
+		*(uint8_t *) target = (uint8_t) rsp->regs[rs2];
+	} else if(funct3 == 0b010){
+		// sw
+		*(uint32_t *) target = (uint32_t) rsp->regs[rs2];
+	} else if(funct3 == 0b011){
+		// sd
+		*(uint64_t *) target = (uint64_t) rsp->regs[rs2];
+	} else {
+		unsupported("Store funct3", funct3);
+	}
+	rsp->pc += 4;
+}
 static void rv_one(rv_state *state) {
     uint32_t iw  = *((uint32_t*) state->pc);
     //iw = cache_lookup(&state->i_cache, (uint64_t) state->pc);
@@ -155,6 +234,12 @@ static void rv_one(rv_state *state) {
     		break;
     	case FMT_UJ:
     		emu_jal(state, iw);
+    		break;
+    	case FMT_I_LOAD:
+    		emu_load(state, iw);
+    		break;
+    	case FMT_S:
+    		emu_store(state, iw);
     		break;
         default:
             unsupported("Unknown opcode: ", opcode);
