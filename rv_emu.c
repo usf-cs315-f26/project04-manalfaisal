@@ -21,33 +21,49 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
 
 	rsp->analysis.ir_count += 1;
 	
-    if (funct3 == 0b000 && funct7 == 0b0000000) {
-    	// add
-        rsp->regs[rd] = rsp->regs[rs1] + rsp->regs[rs2];
-    } else if(funct3 == 0b000 && funct7 == 0b0000001){
-    	// mul
-    	rsp->regs[rd] = rsp->regs[rs1] * rsp->regs[rs2];
-    } else if(funct3 == 0b000 && funct7 == 0b0100000){
-    	// sub
-    	rsp->regs[rd] = rsp->regs[rs1] - rsp->regs[rs2];
-    } else if(funct3 == 0b001 && funct7 == 0b0000000){
-    	// shift left
-    	rsp->regs[rd] = rsp->regs[rs1] << rsp->regs[rs2];
-    } else if(funct3 == 0b101 && funct7 == 0b0000000){
-    	// shift right
-    	rsp->regs[rd] = rsp->regs[rs1] >> rsp->regs[rs2];
-    } else if (funct3 == 0b111 && funct7 == 0b0000000){
-    	// and
-     	rsp->regs[rd] = rsp->regs[rs1] & rsp->regs[rs2];
-    } else if(funct3 == 0b100 && funct7 == 0b0000001){
-    	// div 
-    	rsp->regs[rd] = (int64_t) rsp->regs[rs1] / (int64_t) rsp->regs[rs2];
-    } else if (funct3 == 0b110 && funct7 == 0b0000001){
-    	// rem
-    	rsp->regs[rd] = (int64_t) rsp->regs[rs1] % (int64_t) rsp->regs[rs2];
-    } else {
-        unsupported("R-type funct3", funct3);
-    }
+	switch (funct3) {
+    	case 0b000:
+    		// add, mul and sub share funct3 000, so funct7 picks which one
+    		switch (funct7) {
+    			case 0b0000000:
+    				// add
+    				rsp->regs[rd] = rsp->regs[rs1] + rsp->regs[rs2];
+    				break;
+    			case 0b0000001:
+    				// mul
+    				rsp->regs[rd] = rsp->regs[rs1] * rsp->regs[rs2];
+    				break;
+    			case 0b0100000:
+    				// sub
+    				rsp->regs[rd] = rsp->regs[rs1] - rsp->regs[rs2];
+    				break;
+    			default:
+    				unsupported("R-type funct7", funct7);
+    		}
+    		break;
+    	case 0b001:
+    		// shift left
+    		rsp->regs[rd] = rsp->regs[rs1] << rsp->regs[rs2];
+    		break;
+    	case 0b101:
+    		// shift right
+    		rsp->regs[rd] = rsp->regs[rs1] >> rsp->regs[rs2];
+    		break;
+    	case 0b111:
+    		// and
+    		rsp->regs[rd] = rsp->regs[rs1] & rsp->regs[rs2];
+    		break;
+    	case 0b100:
+    		// div
+    		rsp->regs[rd] = (int64_t) rsp->regs[rs1] / (int64_t) rsp->regs[rs2];
+    		break;
+    	case 0b110:
+    		// rem
+    		rsp->regs[rd] = (int64_t) rsp->regs[rs1] % (int64_t) rsp->regs[rs2];
+			break;
+		default:
+			unsupported("R-type funct3", funct3);
+		}
     rsp->pc += 4; // Next instruction
 }
 
@@ -68,17 +84,21 @@ void emu_i_type(rv_state *rsp, uint32_t iw){
 
 	rsp->analysis.ir_count += 1;
 	
-	if(funct3 == 0b000){
-		// addi
-		rsp->regs[rd] = rsp->regs[rs1] + imm;
-	} else if(funct3 == 0b101){
-		// srli
-		rsp->regs[rd] = rsp->regs[rs1] >> shamt;
-	} else if(funct3 == 0b001){
-		// slli
-		rsp->regs[rd] = rsp->regs[rs1] << shamt;
-	} else {
-		unsupported("I-type funct3", funct3);
+	switch (funct3) {
+		case 0b000:
+			// addi
+			rsp->regs[rd] = rsp->regs[rs1] + imm;
+			break;
+		case 0b101:
+			// srli
+			rsp->regs[rd] = rsp->regs[rs1] >> shamt;
+			break;
+		case 0b001:
+			// slli
+			rsp->regs[rd] = rsp->regs[rs1] << shamt;
+			break;
+		default:
+			unsupported("I-type funct3", funct3);
 	}
 	rsp->pc += 4;
 }
@@ -103,44 +123,37 @@ void emu_b_type(rv_state *rsp, uint32_t iw){
 	int64_t v1 = (int64_t) rsp->regs[rs1];
 	int64_t v2 = (int64_t) rsp->regs[rs2];
 
-	if(funct3 == 0b100){
-		// blt
-		if(v1 < v2){
-			rsp->analysis.b_taken += 1;
-			rsp->pc += imm;
-		} else {
-			rsp->analysis.b_not_taken += 1;
-			rsp->pc += 4;
-		}
-	} else if(funct3 == 0b001){
-		// bne 
-		if(v1 != v2){
-			rsp->analysis.b_taken += 1;
-			rsp->pc += imm;
-		} else {
-			rsp->analysis.b_not_taken += 1;
-			rsp->pc += 4;
-		}
-	} else if(funct3 == 0b000){
-		// beq
-		if(v1 == v2){
-			rsp->analysis.b_taken += 1;
-			rsp->pc += imm;
-		} else {
-			rsp->analysis.b_not_taken += 1;
-			rsp->pc += 4;
-		}
-	} else if(funct3 == 0b101){
-		// bge
-		if(v1 >= v2){
-			rsp->analysis.b_taken += 1;
-			rsp->pc += imm;
-		} else {
-			rsp->analysis.b_not_taken += 1;
-			rsp->pc += 4;
-		}
-	} else{
-		unsupported("B-type funct3", funct3);
+	// each case only decides if the branch is taken;
+	// updating pc and the counters is the same for every branch
+	int taken = 0;
+
+	switch (funct3) {
+		case 0b100:
+			// blt
+			taken = (v1 < v2);
+			break;
+		case 0b001:
+			// bne
+			taken = (v1 != v2);
+			break;
+		case 0b000:
+			// beq
+			taken = (v1 == v2);
+			break;
+		case 0b101:
+			// bge
+			taken = (v1 >= v2);
+			break;
+		default:
+			unsupported("B-type funct3", funct3);
+	}
+
+	if (taken) {
+		rsp->analysis.b_taken += 1;
+		rsp->pc += imm;
+	} else {
+		rsp->analysis.b_not_taken += 1;
+		rsp->pc += 4;
 	}
 }
 void emu_jal(rv_state *rsp, uint32_t iw){
@@ -184,17 +197,21 @@ void emu_load(rv_state *rsp, uint32_t iw){
 	rsp->analysis.ld_count += 1;
 	
 	// read the right size from memory, based on funct3 
-	if(funct3 == 0b000){
-		// lb
-		rsp->regs[rd] = *(uint8_t *) target;
-	} else if(funct3 == 0b010){
-		// lw
-		rsp->regs[rd] = *(uint32_t *) target;
-	} else if(funct3 == 0b011){
-		// ld
-		rsp->regs[rd] = *(uint64_t *) target;
-	} else {
-		unsupported("Load funct3", funct3);
+	switch (funct3) {
+		case 0b000:
+			// lb
+			rsp->regs[rd] = *(uint8_t *) target;
+			break;
+		case 0b010:
+			// lw
+			rsp->regs[rd] = *(uint32_t *) target;
+			break;
+		case 0b011:
+			// ld
+			rsp->regs[rd] = *(uint64_t *) target;
+			break;
+		default:
+			unsupported("Load funct3", funct3);
 	}
 	rsp->pc += 4; 
 }
@@ -214,17 +231,21 @@ void emu_store(rv_state *rsp, uint32_t iw){
 	rsp->analysis.st_count += 1;
 	
 	// write the right size to memory, based on funct3
-	if(funct3 == 0b000){
-		// sb
-		*(uint8_t *) target = (uint8_t) rsp->regs[rs2];
-	} else if(funct3 == 0b010){
-		// sw
-		*(uint32_t *) target = (uint32_t) rsp->regs[rs2];
-	} else if(funct3 == 0b011){
-		// sd
-		*(uint64_t *) target = (uint64_t) rsp->regs[rs2];
-	} else {
-		unsupported("Store funct3", funct3);
+	switch (funct3) {
+		case 0b000:
+			// sb
+			*(uint8_t *) target = (uint8_t) rsp->regs[rs2];
+			break;
+		case 0b010:
+			// sw
+			*(uint32_t *) target = (uint32_t) rsp->regs[rs2];
+			break;
+		case 0b011:
+			// sd
+			*(uint64_t *) target = (uint64_t) rsp->regs[rs2];
+			break;
+		default:
+			unsupported("Store funct3", funct3);
 	}
 	rsp->pc += 4;
 }

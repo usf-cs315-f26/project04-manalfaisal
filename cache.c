@@ -53,10 +53,15 @@ void cache_print(struct cache_st *csp, char *name) {
 
     printf("=== Cache %s\n", name);
     printf("Type          = ");
-    if (csp->type == CACHE_DM) {
-        printf("direct mapped\n");
-    } else if (csp->type == CACHE_SA) {
-        printf("set associative\n");
+    switch (csp->type) {
+        case CACHE_DM:
+            printf("direct mapped\n");
+            break;
+        case CACHE_SA:
+            printf("set associative\n");
+            break;
+        default:
+            break;
     }
     printf("Size          = %d slots\n", csp->size);
     printf("Block size    = %d words\n", csp->block_size);
@@ -222,12 +227,15 @@ uint32_t cache_lookup_sa(struct cache_st *csp, uint64_t addr) {
 uint32_t cache_lookup(struct cache_st *csp, uint64_t addr) {
     uint32_t data;
 
-    if (csp->type == CACHE_DM) {
-        data = cache_lookup_dm(csp, addr);
-    } else if (csp->type == CACHE_SA) {
-        data = cache_lookup_sa(csp, addr);
-    } else {
-        data = *((uint32_t *) addr);
+    switch (csp->type) {
+        case CACHE_DM:
+            data = cache_lookup_dm(csp, addr);
+            break;
+        case CACHE_SA:
+            data = cache_lookup_sa(csp, addr);
+            break;
+        default:
+            data = *((uint32_t *) addr);
     }
     return data;
 }
