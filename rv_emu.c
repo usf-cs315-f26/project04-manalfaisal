@@ -63,7 +63,7 @@ void emu_r_type(rv_state *rsp, uint32_t iw) {
 			break;
 		default:
 			unsupported("R-type funct3", funct3);
-		}
+	}
     rsp->pc += 4; // Next instruction
 }
 
